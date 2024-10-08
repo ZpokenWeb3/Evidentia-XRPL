@@ -12,7 +12,7 @@ contract BondNFT is ERC1155, Ownable, ERC1155Supply {
         uint256 couponValue;
         uint256 issueTimestamp;
         uint256 expirationTimestamp;
-        string ISIN;
+        string CUSIP;
     }
 
     // Custom event

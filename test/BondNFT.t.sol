@@ -28,20 +28,22 @@ contract BondNFTTest is Test {
 
     function testSetMetaData() public {
         BondNFT.Metadata memory metadata = BondNFT.Metadata({
-            value: 100,
-            couponValue: 5,
+            value: 100_000_000,
+            couponValue: 0,
             issueTimestamp: block.timestamp,
             expirationTimestamp: block.timestamp + 365 days,
-            ISIN: "US1234567890"
+            CUSIP: "912797LX3"
         });
-        bondNFT.setMetaData(1, metadata);
-        (uint256 value, uint256 couponValue, uint256 issueTimestamp, uint256 expirationTimestamp, string memory ISIN) =
-            bondNFT.metadata(1);
+        uint256 id = uint256(keccak256(abi.encodePacked(metadata.CUSIP)));
+        console.log("Bond id: ", id);
+        bondNFT.setMetaData(id, metadata);
+        (uint256 value, uint256 couponValue, uint256 issueTimestamp, uint256 expirationTimestamp, string memory CUSIP) =
+            bondNFT.metadata(id);
         assertEq(value, metadata.value);
         assertEq(couponValue, metadata.couponValue);
         assertEq(issueTimestamp, metadata.issueTimestamp);
         assertEq(expirationTimestamp, metadata.expirationTimestamp);
-        assertEq(ISIN, metadata.ISIN);
+        assertEq(CUSIP, metadata.CUSIP);
     }
 
     function testMint() public {
