@@ -31,6 +31,14 @@ contract StableCoinsStaking {
 
     mapping(address => StakerInfo) public stakers;
 
+    event Staked(address indexed user, uint256 amount);
+    event Withdrawn(address indexed user, uint256 amount);
+    event RewardClaimed(address indexed user, uint256 reward);
+
+    error ZeroAmountNotAllowed();
+    error NotEnoughStaked(uint256);
+    error NoRewardsAvailable();
+
     constructor(address _stakingToken, address _externalRewardContract) {
         stakingToken = IERC20(_stakingToken);
         externalRewardContract = IExternalRewardContract(_externalRewardContract);
