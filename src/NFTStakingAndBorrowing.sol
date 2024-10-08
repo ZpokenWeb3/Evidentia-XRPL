@@ -249,6 +249,15 @@ contract NFTStakingAndBorrowing is ERC1155Holder, Ownable {
         emit Repaid(msg.sender, amount);
     }
 
+    function liquidate(address nftAddress, uint256 tokenId, address positionOwner) external {
+        IBondNFT.Metadata memory metadata = IBondNFT(nftAddress).getMetaData(tokenId);
+        if (block.timestamp < metadata.expirationTimestamp - LIQUIDATION_TIME_WINDOW) revert TooEarlyToLiquidate();
+        // Work in progress...
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            INTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
     function _borrow(uint256 amount, address user_address) internal {
         userStats[user_address].debt += amount;
         userStats[user_address].borrowed += amount;
