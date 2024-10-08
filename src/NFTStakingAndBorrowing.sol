@@ -40,6 +40,8 @@ contract NFTStakingAndBorrowing is ERC1155Holder, Ownable {
     uint256 public PROTOCOL_YIELD = 400 * UNIT / BPS;
     uint256 public SAFETY_FEE = 300 * UNIT / BPS;
     uint256 public LIQUIDATION_TIME_WINDOW = 45 * 24 * 60 * 60; // 45 days
+    uint256 public RewardsTransfered;
+    address public STABLES_STAKING_ADDRESS;
 
     IMintableERC20 public stableToken;
 
@@ -62,6 +64,11 @@ contract NFTStakingAndBorrowing is ERC1155Holder, Ownable {
         stableToken = IMintableERC20(_stableToken);
     }
 
+    modifier onlyStablesStaking() {
+        require(msg.sender == STABLES_STAKING_ADDRESS, "Only Stables Staking contract");
+        _;
+    }
+
     /*//////////////////////////////////////////////////////////////
                             ADMIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -80,6 +87,10 @@ contract NFTStakingAndBorrowing is ERC1155Holder, Ownable {
 
     function setLiquidationTimeWindow(uint256 _timeWindowInSeconds) external onlyOwner {
         LIQUIDATION_TIME_WINDOW = _timeWindowInSeconds;
+    }
+
+    function setStablesStakingAddress(address _address) external onlyOwner {
+        STABLES_STAKING_ADDRESS = _address;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -289,5 +300,30 @@ contract NFTStakingAndBorrowing is ERC1155Holder, Ownable {
             totalStats.debt = calculateDebt(totalStats.debt, totalStats.debtUpdateTimestamp, block.timestamp);
         }
         totalStats.debtUpdateTimestamp = block.timestamp;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    STABLE COINS STAKING FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+    function getRewardAmount() external view returns (uint256) {
+        uint256 currentDebt = calculateDebt(totalStats.debt, totalStats.debtUpdateTimestamp, block.timestamp);
+        uint256 rewardAmount = currentDebt - totalStats.borrowed - RewardsTransfered;
+        return rewardAmount;
+    }
+
+    function getRewards() external onlyStablesStaking returns (uint256) {
+        uint256 currentDebt;
+        if (totalStats.debtUpdateTimestamp == block.timestamp) {
+            currentDebt = totalStats.debt;
+        } else {
+            currentDebt = calculateDebt(totalStats.debt, totalStats.debtUpdateTimestamp, block.timestamp);
+        }
+
+        uint256 rewardAmount = currentDebt - totalStats.borrowed - RewardsTransfered;
+        if (rewardAmount > 0) {
+            stableToken.transfer(msg.sender, rewardAmount);
+        }
+        RewardsTransfered += rewardAmount;
+        return rewardAmount;
     }
 }
