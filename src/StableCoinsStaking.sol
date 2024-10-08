@@ -122,6 +122,21 @@ contract StableCoinsStaking {
         emit Withdrawn(msg.sender, _amount);
     }
 
+    // Function to claim rewards
+    function claimRewards() external updateReward(msg.sender) {
+        StakerInfo storage user = stakers[msg.sender];
+        uint256 reward = user.rewardsEarned;
+
+        if (reward == 0) revert NoRewardsAvailable();
+
+        user.rewardsEarned = 0;
+        user.rewardPaid += reward;
+
+        stakingToken.transfer(msg.sender, reward);
+
+        emit RewardClaimed(msg.sender, reward);
+    }
+
     /*//////////////////////////////////////////////////////////////
                             INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/

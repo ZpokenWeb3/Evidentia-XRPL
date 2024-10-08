@@ -209,4 +209,81 @@ contract StakingStablesTest is Test {
         (staked,,,,) = stakingStables.stakers(client2);
         assertEq(staked, 0);
     }
+
+    function test_rewards() public {
+        owner = address(1);
+        address client1 = address(2);
+        address client2 = address(3);
+        address client3 = address(4);
+
+        vm.startPrank(owner);
+        bondNFT.setAllowedMints(client1, 1, 300);
+        bondNFT.setAllowedMints(client2, 2, 100);
+        bondNFT.setAllowedMints(client3, 3, 200);
+        vm.stopPrank();
+
+        vm.startPrank(client1);
+        bondNFT.mint(1, 300, "");
+        bondNFT.setApprovalForAll(address(nftStaking), true);
+        nftStaking.stakeNFT(address(bondNFT), 1, 300);
+        nftStaking.borrow(0); // client1 borrows all available stables
+        vm.stopPrank();
+
+        vm.startPrank(client2);
+        bondNFT.mint(2, 100, "");
+        bondNFT.setApprovalForAll(address(nftStaking), true);
+        nftStaking.stakeNFT(address(bondNFT), 2, 100);
+        nftStaking.borrow(0);
+        stableBondCoins.approve(address(stakingStables), UINT256_MAX);
+        uint256 amount = stableBondCoins.balanceOf(client2);
+        // Client 2 stakes stables
+        stakingStables.stake(amount);
+        vm.stopPrank();
+
+        vm.warp(30 days);
+        vm.roll(2);
+
+        (uint256 staked,,,,) = stakingStables.stakers(client2);
+        console.log("After 30 days...");
+        console.log("Client2 staked : ", staked);
+        uint256 client2Rewards = stakingStables.pendingRewards(client2);
+        console.log("Client2 rewards: ", client2Rewards);
+        console.log("Client2 APY    : ", stakingStables.expectedAPY(client2));
+
+        vm.prank(client2);
+        stakingStables.claimRewards();
+
+        assertEq(stableBondCoins.balanceOf(client2), client2Rewards);
+
+        vm.startPrank(client3);
+        bondNFT.mint(3, 200, "");
+        bondNFT.setApprovalForAll(address(nftStaking), true);
+        nftStaking.stakeNFT(address(bondNFT), 3, 200);
+        nftStaking.borrow(0);
+        stableBondCoins.approve(address(stakingStables), UINT256_MAX);
+        amount = stableBondCoins.balanceOf(client3);
+        // Client 3 stakes stables
+        stakingStables.stake(amount);
+        vm.stopPrank();
+
+        vm.warp(90 days);
+        vm.roll(3);
+
+        console.log("After 90 days...");
+        console.log("Client3 staked : ", amount);
+        uint256 client2Rewards2 = stakingStables.pendingRewards(client2);
+        console.log("Client2 rewards: ", client2Rewards2);
+        uint256 client3Rewards = stakingStables.pendingRewards(client3);
+        console.log("Client3 rewards: ", client3Rewards);
+        console.log("Client2 APY    : ", stakingStables.expectedAPY(client2));
+        console.log("Client3 APY    : ", stakingStables.expectedAPY(client3));
+
+        vm.prank(client2);
+        stakingStables.claimRewards();
+        vm.prank(client3);
+        stakingStables.claimRewards();
+
+        assertEq(stableBondCoins.balanceOf(client2), client2Rewards + client2Rewards2);
+        assertEq(stableBondCoins.balanceOf(client3), client3Rewards);
+    }
 }
