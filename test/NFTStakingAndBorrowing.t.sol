@@ -1,29 +1,60 @@
-// SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.20;
+// SPDX-License-Identifier: MIT
+pragma solidity >=0.8.20;
 
 import {Test, console} from "forge-std/Test.sol";
 import {NFTStakingAndBorrowing} from "../src/NFTStakingAndBorrowing.sol";
+import {StableBondCoins} from "../src/StableBondCoins.sol";
+import {BondNFT} from "../src/BondNFT.sol";
 
 contract NFTStakingAndBorrowingTest is Test {
     NFTStakingAndBorrowing public nftStaking;
+    BondNFT public bondNFT;
+    StableBondCoins public stableBondCoins;
+    address public owner;
+    bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
 
     function setUp() public {
-        nftStaking = new NFTStakingAndBorrowing();
+        owner = address(1);
+        vm.startPrank(owner);
+        bondNFT = new BondNFT(owner, "https://example.com/{id}.json");
+        stableBondCoins = new StableBondCoins(owner, owner);
+
+        nftStaking = new NFTStakingAndBorrowing(address(stableBondCoins));
+
+        stableBondCoins.grantRole(MINTER_ROLE, address(nftStaking));
+        BondNFT.Metadata memory metadata = BondNFT.Metadata({
+            value: 100_000000,
+            couponValue: 0,
+            issueTimestamp: 1,
+            expirationTimestamp: 1 + 31536000,
+            CUSIP: "912797LX3"
+        });
+
+        bondNFT.setMetaData(1, metadata);
+        bondNFT.setMetaData(2, metadata);
+        bondNFT.setMetaData(3, metadata);
+        bondNFT.setAllowedMints(owner, 1, 100);
+        bondNFT.setAllowedMints(owner, 2, 100);
+        bondNFT.setAllowedMints(owner, 3, 100);
+        bondNFT.mint(1, 100, "");
+        bondNFT.setApprovalForAll(address(nftStaking), true);
+        nftStaking.whitelistNFT(address(bondNFT), true);
+        vm.stopPrank();
     }
 
-    function test_calculateDebt() public view {
-        uint256 newDebt = nftStaking.calculateDebt(89896e16, 1706745600, 1735689600);
-        assertEq(newDebt, 997500388704920390522);
-    }
+    function test_stakeNFT() public {
+        owner = address(1);
+        vm.prank(owner);
+        nftStaking.stakeNFT(address(bondNFT), 1, 100);
+        console.log(address(this));
+        assertEq(stableBondCoins.balanceOf(address(nftStaking)), 9700_000000);
 
-    function test_calculateMaxBorrow() public view {
-        uint256 maxBorrow = nftStaking.calculateMaxBorrow(9975e17, 1706745600, 1735689600);
-        assertEq(maxBorrow, 898959649694196407801);
-    }
+        NFTStakingAndBorrowing.TotalStats memory totalStats = nftStaking.getTotalStats();
 
-    function testFuzz_MaxBorrow(uint64 x) public view {
-        uint256 x256 = (uint256(x) + uint256(2)) * 1e18;
-        uint256 maxBorrow = nftStaking.calculateMaxBorrow(x256, 1706745600, 1735689600);
-        assertLe(maxBorrow, x256);
+        assertEq(totalStats.staked, 9700_000000);
+
+        NFTStakingAndBorrowing.UserStats memory userStats = nftStaking.getUserStats(owner);
+
+        assertEq(userStats.staked, 9700_000000);
     }
 }
