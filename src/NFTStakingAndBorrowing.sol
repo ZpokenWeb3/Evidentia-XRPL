@@ -51,6 +51,13 @@ contract NFTStakingAndBorrowing is ERC1155Holder, Ownable {
         address indexed user, address liquidator, address indexed nftAddress, uint256 tokenId, uint256 amount
     );
 
+    error NFTNotWhitelisted();
+    error InsufficientNFTBalance();
+    error BorrowAmountExceedsLimit(uint256);
+    error InsufficientBalanceToRepay();
+    error NotEnoughCollateral(uint256);
+    error TooEarlyToLiquidate();
+
     constructor(address _stableToken) ERC1155Holder() Ownable(msg.sender) {
         stableToken = IMintableERC20(_stableToken);
     }
@@ -132,11 +139,29 @@ contract NFTStakingAndBorrowing is ERC1155Holder, Ownable {
         return maxBorrowLog2.exp2().intoUint256() / 1e18;
     }
 
+    function userAvailableToBorrow(address userAddress) public view returns (uint256) {
+        if (userStats[userAddress].nominalAvailable == 0) return 0;
+
+        uint256 nominalAvailable = calculateDebt(
+            userStats[userAddress].nominalAvailable, userStats[userAddress].debtUpdateTimestamp, block.timestamp
+        );
+        if (userStats[userAddress].debt == 0) {
+            return nominalAvailable;
+        } else {
+            uint256 debt =
+                calculateDebt(userStats[userAddress].debt, userStats[userAddress].debtUpdateTimestamp, block.timestamp);
+            return nominalAvailable - debt;
+        }
+    }
+
     /*//////////////////////////////////////////////////////////////
                             MAIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     function stakeNFT(address nftAddress, uint256 tokenId, uint256 amount) public {
+        if (!whitelistedNFTs[nftAddress]) revert NFTNotWhitelisted();
+        if (IBondNFT(nftAddress).balanceOf(msg.sender, tokenId) < amount) revert InsufficientNFTBalance();
+
         IBondNFT(nftAddress).safeTransferFrom(msg.sender, address(this), tokenId, amount, "");
         userNFTs[msg.sender][nftAddress][tokenId] = amount;
 
@@ -154,5 +179,55 @@ contract NFTStakingAndBorrowing is ERC1155Holder, Ownable {
         stableToken.mint(address(this), totalValue);
 
         emit NFTStaked(msg.sender, nftAddress, tokenId, amount);
+    }
+
+    function borrow(uint256 amount) public {
+        updateUserDebtAndAvailable(msg.sender);
+        updateTotalDebt();
+        uint256 max_borrow = userStats[msg.sender].nominalAvailable - userStats[msg.sender].debt;
+        if (amount == 0) {
+            amount = max_borrow;
+        }
+
+        if (amount > max_borrow) {
+            revert BorrowAmountExceedsLimit(max_borrow);
+        }
+
+        _borrow(amount, msg.sender);
+
+        stableToken.transfer(msg.sender, amount);
+    }
+
+    function _borrow(uint256 amount, address user_address) internal {
+        userStats[user_address].debt += amount;
+        userStats[user_address].borrowed += amount;
+        totalStats.borrowed += amount;
+        totalStats.debt += amount;
+
+        emit Borrowed(user_address, amount);
+    }
+
+    function updateUserDebtAndAvailable(address userAddress) internal {
+        if (userStats[userAddress].debtUpdateTimestamp == block.timestamp) return;
+
+        if (userStats[userAddress].debt != 0) {
+            userStats[userAddress].debt =
+                calculateDebt(userStats[userAddress].debt, userStats[userAddress].debtUpdateTimestamp, block.timestamp);
+        }
+        if (userStats[userAddress].nominalAvailable != 0) {
+            userStats[userAddress].nominalAvailable = calculateDebt(
+                userStats[userAddress].nominalAvailable, userStats[userAddress].debtUpdateTimestamp, block.timestamp
+            );
+        }
+        userStats[userAddress].debtUpdateTimestamp = block.timestamp;
+    }
+
+    function updateTotalDebt() internal {
+        if (totalStats.debtUpdateTimestamp == block.timestamp) return;
+
+        if (totalStats.debt != 0) {
+            totalStats.debt = calculateDebt(totalStats.debt, totalStats.debtUpdateTimestamp, block.timestamp);
+        }
+        totalStats.debtUpdateTimestamp = block.timestamp;
     }
 }
