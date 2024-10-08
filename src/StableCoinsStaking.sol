@@ -43,4 +43,84 @@ contract StableCoinsStaking {
         stakingToken = IERC20(_stakingToken);
         externalRewardContract = IExternalRewardContract(_externalRewardContract);
     }
+
+    modifier updateReward(address _staker) {
+        // Update global `rewardPerTokenStored` before any actions
+        rewardPerTokenStored = _rewardPerToken();
+        lastUpdateTime = block.timestamp;
+
+        if (_staker != address(0)) {
+            // Update the user's earned rewards before any action
+            StakerInfo storage user = stakers[_staker];
+            user.rewardsEarned = _earned(_staker);
+            user.userRewardPerTokenPaid = rewardPerTokenStored;
+        }
+        _;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            VIEW FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    function pendingRewards(address _staker) public view returns (uint256) {
+        if (totalStaked == 0) {
+            return 0;
+        }
+        uint256 rewardFromExternal = externalRewardContract.getRewardAmount();
+        uint256 _rewardPerTokenStored = rewardPerTokenStored + ((rewardFromExternal * 1e18) / totalStaked);
+
+        StakerInfo storage user = stakers[_staker];
+        uint256 rewardPerTokenDelta = _rewardPerTokenStored - user.userRewardPerTokenPaid;
+
+        return ((user.stakedAmount * rewardPerTokenDelta) / 1e18) + user.rewardsEarned;
+    }
+
+    function expectedAPY(address _staker) external view returns (uint256) {
+        StakerInfo storage user = stakers[_staker];
+        if (user.stakedAmount == 0) {
+            return 0;
+        }
+        uint256 stakerDuration = block.timestamp - user.stakeTimestamp;
+        return YEAR_IN_SECONDS * (pendingRewards(_staker) + user.rewardsEarned) * 10000
+            / (user.stakedAmount * stakerDuration);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            MAIN FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    // Function to stake tokens
+    function stake(uint256 _amount) external updateReward(msg.sender) {
+        if (_amount == 0) revert ZeroAmountNotAllowed();
+
+        stakingToken.transferFrom(msg.sender, address(this), _amount);
+
+        StakerInfo storage user = stakers[msg.sender];
+        user.stakedAmount += _amount;
+        totalStaked += _amount;
+
+        user.stakeTimestamp = block.timestamp;
+
+        emit Staked(msg.sender, _amount);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            INTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+    // Internal function to calculate current reward per token
+    function _rewardPerToken() internal returns (uint256) {
+        if (totalStaked == 0) {
+            return rewardPerTokenStored;
+        }
+
+        uint256 rewardFromExternal = externalRewardContract.getRewards();
+        return rewardPerTokenStored + ((rewardFromExternal * 1e18) / totalStaked);
+    }
+
+    // Internal function to calculate the user's earned rewards
+    function _earned(address _staker) internal view returns (uint256) {
+        StakerInfo storage user = stakers[_staker];
+        uint256 rewardPerTokenDelta = rewardPerTokenStored - user.userRewardPerTokenPaid;
+        return ((user.stakedAmount * rewardPerTokenDelta) / 1e18) + user.rewardsEarned;
+    }
 }
