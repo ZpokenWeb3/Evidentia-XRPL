@@ -181,6 +181,39 @@ contract NFTStakingAndBorrowing is ERC1155Holder, Ownable {
         emit NFTStaked(msg.sender, nftAddress, tokenId, amount);
     }
 
+    function unstakeNFT(address nftAddress, uint256 tokenId, uint256 amount) external {
+        if (!whitelistedNFTs[nftAddress]) revert NFTNotWhitelisted();
+        // Only NFT owner can unstake anytime
+        if (userNFTs[msg.sender][nftAddress][tokenId] < amount) revert InsufficientNFTBalance();
+
+        IBondNFT.Metadata memory metadata = IBondNFT(nftAddress).getMetaData(tokenId);
+        uint256 totalUnstakeValue = (metadata.value + metadata.couponValue) * amount * (UNIT - SAFETY_FEE) / UNIT;
+
+        updateUserDebtAndAvailable(msg.sender);
+        updateTotalDebt();
+
+        // Check if user has enough collateral
+        if (
+            calculateMaxBorrow(totalUnstakeValue, block.timestamp, metadata.expirationTimestamp)
+                > userStats[msg.sender].nominalAvailable - userStats[msg.sender].debt
+        ) {
+            revert NotEnoughCollateral(userStats[msg.sender].nominalAvailable - userStats[msg.sender].debt);
+        }
+
+        userNFTs[msg.sender][nftAddress][tokenId] -= amount;
+
+        userStats[msg.sender].staked -= totalUnstakeValue;
+        userStats[msg.sender].nominalAvailable -=
+            calculateMaxBorrow(totalUnstakeValue, block.timestamp, metadata.expirationTimestamp);
+        totalStats.staked -= totalUnstakeValue;
+
+        IBondNFT(nftAddress).safeTransferFrom(address(this), msg.sender, tokenId, amount, "");
+
+        stableToken.burn(address(this), totalUnstakeValue);
+
+        emit NFTUnstaked(msg.sender, nftAddress, tokenId, amount);
+    }
+
     function borrow(uint256 amount) public {
         updateUserDebtAndAvailable(msg.sender);
         updateTotalDebt();
@@ -196,6 +229,24 @@ contract NFTStakingAndBorrowing is ERC1155Holder, Ownable {
         _borrow(amount, msg.sender);
 
         stableToken.transfer(msg.sender, amount);
+    }
+
+    function repay(uint256 amount) external {
+        updateUserDebtAndAvailable(msg.sender);
+        updateTotalDebt();
+
+        if (amount == 0) amount = userStats[msg.sender].debt;
+
+        if (stableToken.balanceOf(msg.sender) < amount) revert InsufficientBalanceToRepay();
+
+        stableToken.transferFrom(msg.sender, address(this), amount);
+        userStats[msg.sender].debt -= amount;
+        userStats[msg.sender].borrowed -= amount;
+
+        totalStats.borrowed -= amount;
+        totalStats.debt -= amount;
+
+        emit Repaid(msg.sender, amount);
     }
 
     function _borrow(uint256 amount, address user_address) internal {
