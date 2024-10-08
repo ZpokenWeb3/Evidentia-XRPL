@@ -104,6 +104,24 @@ contract StableCoinsStaking {
         emit Staked(msg.sender, _amount);
     }
 
+    // Function to withdraw staked tokens
+    function withdraw(uint256 _amount) external updateReward(msg.sender) {
+        if (_amount == 0) revert ZeroAmountNotAllowed();
+
+        StakerInfo storage user = stakers[msg.sender];
+
+        if (_amount > user.stakedAmount) revert NotEnoughStaked(user.stakedAmount);
+
+        user.stakedAmount -= _amount;
+        totalStaked -= _amount;
+
+        user.stakeTimestamp = block.timestamp;
+
+        stakingToken.transfer(msg.sender, _amount);
+
+        emit Withdrawn(msg.sender, _amount);
+    }
+
     /*//////////////////////////////////////////////////////////////
                             INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
