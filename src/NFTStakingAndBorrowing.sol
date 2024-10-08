@@ -43,6 +43,14 @@ contract NFTStakingAndBorrowing is ERC1155Holder, Ownable {
 
     IMintableERC20 public stableToken;
 
+    event NFTStaked(address indexed user, address indexed nftAddress, uint256 tokenId, uint256 amount);
+    event NFTUnstaked(address indexed user, address indexed nftAddress, uint256 tokenId, uint256 amount);
+    event Borrowed(address indexed user, uint256 amount);
+    event Repaid(address indexed user, uint256 amount);
+    event Liquidated(
+        address indexed user, address liquidator, address indexed nftAddress, uint256 tokenId, uint256 amount
+    );
+
     constructor(address _stableToken) ERC1155Holder() Ownable(msg.sender) {
         stableToken = IMintableERC20(_stableToken);
     }
@@ -71,7 +79,7 @@ contract NFTStakingAndBorrowing is ERC1155Holder, Ownable {
                             VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-       function getUserStats(address userAddress) public view returns (UserStats memory) {
+    function getUserStats(address userAddress) public view returns (UserStats memory) {
         if (userStats[userAddress].debtUpdateTimestamp == block.timestamp) {
             return userStats[userAddress];
         }
@@ -144,5 +152,7 @@ contract NFTStakingAndBorrowing is ERC1155Holder, Ownable {
         userStats[msg.sender].debtUpdateTimestamp = block.timestamp;
 
         stableToken.mint(address(this), totalValue);
+
+        emit NFTStaked(msg.sender, nftAddress, tokenId, amount);
     }
 }
